@@ -1,0 +1,16 @@
+MENSAJES PARA PUBLICAR EN MICROSOFT TEAMS
+Banco Aurora. Contenido ficticio.
+
+================================================================
+1. Laboratorio 3.2 — Incidente INC-2025-042
+   Publícalo en un canal o chat de grupo al que pertenezcas.
+================================================================
+
+Equipo: confirmamos el incidente INC-2025-042. El vector de entrada fueron credenciales filtradas de la cuenta de servicio svc_respaldos. Ya deshabilitamos la cuenta y rotamos las credenciales de las 14 cuentas de servicio de producción. Queda pendiente revisar los accesos de las últimas 48 horas en los sistemas conectados al expediente digital de cliente. Cumplimiento está evaluando si aplica notificación regulatoria por el plazo de 72 horas. Por favor revisen sus sistemas y reporten cualquier anomalía en este canal.
+
+================================================================
+2. Laboratorio 3.4 — Proyecto Nexo
+   Publícalo en un canal o chat de grupo al que pertenezcas.
+================================================================
+
+Equipo Nexo, actualización rápida de la semana: los indicadores de la mesa de servicio muestran mejora en satisfacción de sucursales, con un promedio de 88.6%. El incidente crítico del miércoles se resolvió en 4 horas, aunque arrastró seis reprocesos por error de captura ese mismo día. Seguimos en verde para el hito de migración de datos. Continuamos a la espera del acceso al ambiente de integración del proveedor.

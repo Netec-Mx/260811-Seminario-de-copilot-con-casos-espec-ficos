@@ -1,1187 +1,378 @@
-# 1 Demostración: Flujo completo para la creación y uso de agente para comparación de información en contratos y reportes
+# 2.1 Demostración: Flujo completo para la creación y uso de agente para comparación de información en contratos y reportes
 
 ## Metadata
 
 | Campo | Valor |
 |-------|-------|
+| **Tema del temario** | 2.1 |
 | **Duración** | 30 minutos |
 | **Complejidad** | Media |
 | **Nivel Bloom** | Crear |
+| **Herramienta** | Agent Builder en Microsoft 365 Copilot |
 
 ## Descripción general
 
-En este laboratorio construirás un agente basado en un modelo de lenguaje (LLM) capaz de comparar información clave entre documentos contractuales y reportes operativos. El flujo completo abarca: la ingesta de documentos, la extracción estructurada de cláusulas y métricas, la creación del agente con herramientas personalizadas, y la generación de un reporte de discrepancias. Al finalizar, dispondrás de un sistema funcional que automatiza la verificación cruzada de datos entre contratos y reportes.
+Un analista de proveedores repite el mismo trabajo cada mes: abrir el contrato, abrir el reporte del proveedor, comparar concepto por concepto y calcular si proceden penalizaciones. En esta guía conviertes ese procedimiento en un agente reutilizable con Agent Builder, la herramienta de creación de agentes incluida en tu licencia de Microsoft 365 Copilot.
+
+El agente lleva el contrato como conocimiento permanente y las instrucciones del procedimiento de auditoría. Cualquier persona del área con quien lo compartas obtiene la misma revisión, con el mismo criterio, sin volver a explicárselo.
+
+Todo se hace en el navegador.
 
 ## Objetivos de aprendizaje
 
-- [ ] Diseñar e implementar un agente con LangChain que utilice herramientas personalizadas para comparar documentos.
-- [ ] Extraer información estructurada de contratos y reportes mediante prompts especializados.
-- [ ] Crear funciones-herramienta (tools) que el agente invoque para realizar comparaciones campo a campo.
-- [ ] Generar un reporte consolidado de discrepancias entre contrato y reporte operativo.
-- [ ] Validar el flujo completo end-to-end con documentos de prueba.
+- Crear un agente declarativo desde Microsoft 365 Copilot usando Agent Builder.
+- Redactar instrucciones que fijen un procedimiento de auditoría repetible.
+- Asociar documentos de OneDrive o SharePoint como conocimiento del agente.
+- Configurar mensajes iniciales que hagan el agente utilizable por alguien que no lo construyó.
+- Probar el agente antes de publicarlo y compartirlo con el área.
 
 ## Prerrequisitos
 
 ### Conocimientos previos
 
-| Tema | Nivel requerido |
-|------|----------------|
-| Python 3.10+ | Intermedio |
-| Conceptos de LLMs y prompting | Básico |
-| LangChain (agentes, tools, chains) | Básico |
-| Lectura de documentos PDF/texto | Básico |
+| Requisito | Nivel |
+|---|---|
+| Estructura de prompts efectivos (capítulo 1) | Necesario |
+| Nociones de niveles de servicio y penalizaciones contractuales | Deseable |
+| Navegación en OneDrive | Necesario |
 
 ### Acceso requerido
 
-- Cuenta con acceso a la API de OpenAI (o modelo compatible como Azure OpenAI, Anthropic, etc.)
-- Clave de API configurada como variable de entorno
-- Terminal con acceso a Internet para instalar dependencias
+| Recurso | Detalle |
+|---|---|
+| Licencia | Microsoft 365 Copilot con Agent Builder habilitado por el administrador |
+| Navegador | Microsoft Edge o Google Chrome actualizado |
+| Archivos | Los tres documentos de [Datos/Capitulo02/](../Datos/Capitulo02/) subidos a OneDrive |
 
-## Entorno del laboratorio
+> **Comprobación previa.** Abre **https://m365.cloud.microsoft/chat** y busca **Nuevo agente** (*New agent*) en el panel izquierdo. Su presencia confirma que Agent Builder está habilitado en el tenant. Verifícalo antes de la sesión, con margen para pedir la habilitación al administrador si hiciera falta.
 
-### Software necesario
+## Preparación
 
-| Componente | Versión mínima |
-|------------|---------------|
-| Python | 3.10+ |
-| langchain | 0.2+ |
-| langchain-openai | 0.1+ |
-| pydantic | 2.0+ |
-| python-dotenv | 1.0+ |
+Sigue [Datos/README.md](../Datos/README.md) para subir a OneDrive la carpeta `Seminario Copilot/Capitulo02` con estos tres archivos:
 
-### Configuración inicial
+| Archivo | Papel en la demostración |
+|---|---|
+| `Contrato_CS-2024-0891_Servicios_TI.docx` | La norma. Es el conocimiento permanente del agente |
+| `Reporte_Proveedor_CS-2024-0891_Marzo.docx` | Primer periodo a evaluar. Contiene nueve incumplimientos |
+| `Reporte_Proveedor_CS-2024-0891_Abril.docx` | Segundo periodo. Sirve para probar que el agente se reutiliza sin tocarlo |
 
-```bash
-# Crear directorio del proyecto
-mkdir -p lab-agent-comparador && cd lab-agent-comparador
+Hazlo **al menos 30 minutos antes** de la sesión. Los archivos recién subidos aparecen marcados como *Preparando* en el panel de conocimiento hasta que terminan de indexarse.
 
-# Crear entorno virtual
-python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate   # Windows
-
-# Instalar dependencias
-pip install langchain langchain-openai pydantic python-dotenv
-
-# Crear archivo de configuración
-cat > .env << 'EOF'
-OPENAI_API_KEY=sk-tu-clave-aqui
-OPENAI_MODEL=gpt-4o-mini
-EOF
-```
-
-### Estructura del proyecto
-
-```
-lab-agent-comparador/
-├── .env
-├── data/
-│   ├── contrato_ejemplo.txt
-│   └── reporte_ejemplo.txt
-├── src/
-│   ├── __init__.py
-│   ├── models.py
-│   ├── extractor.py
-│   ├── tools.py
-│   └── agent.py
-└── main.py
-```
-
-```bash
-mkdir -p data src
-touch src/__init__.py
-```
+---
 
 ## Paso a paso
 
-### Paso 1: Crear documentos de prueba
+### Paso 1 — Abrir Agent Builder
 
-**Objetivo:** Preparar un contrato y un reporte de ejemplo que contengan datos comparables con discrepancias intencionales.
+**Objetivo:** llegar a la pantalla de creación del agente.
 
-**Instrucciones:**
+1. Abre **https://m365.cloud.microsoft/chat** e inicia sesión con tu cuenta corporativa.
+2. Comprueba que el botón **Work IQ**, en la parte superior izquierda, está activado.
+3. En el panel izquierdo, pulsa **Nuevo agente** (*New agent*).
 
-1. Crea el archivo del contrato de ejemplo:
+**Qué debes ver:** una pantalla con dos pestañas en la parte superior, **Describir** (*Describe*) y **Configurar** (*Configure*), un cuadro de chat en el centro y un enlace **Omitir para configurar** (*Skip to configure*).
 
-```bash
-cat > data/contrato_ejemplo.txt << 'EOF'
-CONTRATO DE PRESTACIÓN DE SERVICIOS N° CS-2024-0891
+> Agent Builder está disponible en el navegador y en la aplicación de escritorio y web de Microsoft Teams. Para esta demostración usa el navegador.
 
-Fecha de firma: 15 de enero de 2024
-Vigencia: 15 de enero de 2024 al 31 de diciembre de 2024
+---
 
-PARTES:
-- Contratante: Empresa Tecnológica del Norte S.A. de C.V. (ETN)
-- Proveedor: Soluciones Cloud México S.A. de C.V. (SCM)
+### Paso 2 — Describir el agente en lenguaje natural
 
-CLÁUSULA 3 - NIVELES DE SERVICIO (SLA):
-3.1 Disponibilidad mínima garantizada: 99.5% mensual
-3.2 Tiempo máximo de respuesta ante incidentes críticos: 30 minutos
-3.3 Tiempo máximo de resolución de incidentes críticos: 4 horas
-3.4 Ventana de mantenimiento programado: Domingos 02:00-06:00 hrs
+**Objetivo:** dejar que Agent Builder redacte el primer borrador del agente.
 
-CLÁUSULA 4 - CONTRAPRESTACIÓN:
-4.1 Monto mensual fijo: $150,000.00 MXN + IVA
-4.2 Penalización por incumplimiento de SLA disponibilidad: 5% del monto mensual por cada 0.1% por debajo del 99.5%
-4.3 Penalización por exceder tiempo de respuesta: $5,000.00 MXN por incidente
+1. En el cuadro de chat de la pestaña **Describir**, escribe:
 
-CLÁUSULA 5 - CAPACIDAD:
-5.1 Servidores dedicados: 12 instancias tipo c5.2xlarge
-5.2 Almacenamiento: 5 TB SSD
-5.3 Ancho de banda garantizado: 1 Gbps simétrico
-5.4 Respaldos: Diarios incrementales, semanales completos, retención 90 días
-
-CLÁUSULA 7 - REPORTES:
-7.1 El proveedor entregará reporte mensual de operación antes del día 5 de cada mes
-7.2 El reporte incluirá: métricas de disponibilidad, incidentes, capacidad utilizada y respaldos
-EOF
+```text
+Quiero un agente que audite los reportes mensuales de un proveedor de
+servicios de TI contra el contrato que los rige. Debe detectar cada
+incumplimiento de los niveles de servicio, indicar la cláusula que se
+incumple, calcular las penalizaciones que corresponden y dar un veredicto
+de cumple o no cumple. El usuario es un analista de gestión de proveedores
+de un banco.
 ```
 
-2. Crea el archivo del reporte operativo de ejemplo:
+2. Pulsa **Enter** y espera unos segundos.
+3. Cambia a la pestaña **Configurar** (*Configure*).
 
-```bash
-cat > data/reporte_ejemplo.txt << 'EOF'
-REPORTE MENSUAL DE OPERACIÓN - MARZO 2024
-Contrato: CS-2024-0891
-Fecha de entrega: 7 de abril de 2024
-Elaborado por: Soluciones Cloud México S.A. de C.V.
+**Qué debes ver:** los campos **Nombre**, **Descripción**, **Instrucciones** y **Mensajes iniciales** ya rellenos por Agent Builder a partir de tu descripción. Ese es el borrador; en el paso siguiente lo sustituyes por el procedimiento definitivo.
 
-1. MÉTRICAS DE DISPONIBILIDAD
-   - Disponibilidad del mes: 99.2%
-   - Horas totales del mes: 744
-   - Horas de indisponibilidad no programada: 5.95 horas
-   - Ventanas de mantenimiento utilizadas: 3 (domingos 03, 10 y 24 de marzo)
-   - Horario de mantenimiento: Domingos 01:00-05:00 hrs
+> Si tu Microsoft 365 está configurado en un idioma sin soporte para la creación en lenguaje natural, este paso no producirá nada. Vuelve a **Nuevo agente**, pulsa **Omitir para configurar** y continúa desde el paso 3: el resultado final es el mismo.
 
-2. INCIDENTES
-   - Total de incidentes: 8
-   - Incidentes críticos: 3
-     * INC-001 (05/mar): Respuesta 25 min, Resolución 3.5 hrs
-     * INC-002 (12/mar): Respuesta 45 min, Resolución 5.2 hrs
-     * INC-003 (28/mar): Respuesta 20 min, Resolución 2.1 hrs
-   - Incidentes no críticos: 5
+---
 
-3. CAPACIDAD
-   - Servidores activos: 11 instancias tipo c5.2xlarge (1 en mantenimiento)
-   - Almacenamiento utilizado: 3.8 TB de 5 TB disponibles (76%)
-   - Ancho de banda promedio: 850 Mbps
-   - Ancho de banda pico: 1.2 Gbps
+### Paso 3 — Fijar nombre y descripción
 
-4. RESPALDOS
-   - Respaldos diarios ejecutados: 29/31 (2 fallidos los días 14 y 15)
-   - Respaldos semanales ejecutados: 4/4
-   - Retención configurada: 60 días
-   - Último restore de prueba: 20 de marzo (exitoso)
+**Objetivo:** que el agente sea reconocible en la lista de agentes del área.
 
-5. FACTURACIÓN
-   - Monto facturado: $150,000.00 MXN + IVA
-   - Penalizaciones aplicadas: Ninguna
-EOF
+En la pestaña **Configurar**:
+
+1. En **Nombre** (*Name*), borra lo que haya y escribe:
+
+```text
+Auditor de contrato CS-2024-0891
 ```
 
-**Resultado esperado:** Dos archivos de texto en el directorio `data/` con información deliberadamente inconsistente para que el agente detecte discrepancias.
+2. En **Descripción** (*Description*), borra lo que haya y escribe:
 
-**Verificación:**
-
-```bash
-ls -la data/
-# Debe mostrar contrato_ejemplo.txt y reporte_ejemplo.txt
+```text
+Compara los reportes mensuales de Servicios de Infraestructura Meridiano
+contra el contrato CS-2024-0891. Detecta incumplimientos de niveles de
+servicio, cita la cláusula afectada, calcula las penalizaciones aplicables
+y emite un veredicto.
 ```
 
-### Paso 2: Definir los modelos de datos
+3. Opcional, si sobra tiempo: pulsa el icono de **lápiz** sobre el avatar del agente y elige **Generar** (*Generate*) para que Copilot cree un icono.
 
-**Objetivo:** Crear modelos Pydantic que representen la información estructurada extraída de ambos documentos.
+**Por qué importa la descripción:** cumple una función técnica. Es lo que Microsoft 365 Copilot usa para decidir cuándo sugerir este agente frente a otros. Cuanto más precisa, mejor se activa.
 
-**Instrucciones:**
+---
 
-1. Crea el archivo de modelos:
+### Paso 4 — Escribir las instrucciones
 
-```python
-# src/models.py
-from pydantic import BaseModel, Field
-from typing import Optional
+**Objetivo:** convertir el procedimiento de auditoría en el comportamiento fijo del agente.
 
+1. Localiza el campo **Instrucciones** (*Instructions*).
+2. Selecciona todo el texto que Agent Builder generó y bórralo.
+3. Pega este bloque completo:
 
-class SLAContractual(BaseModel):
-    """Niveles de servicio definidos en el contrato."""
-    disponibilidad_minima: float = Field(description="Porcentaje mínimo de disponibilidad mensual")
-    tiempo_respuesta_critico_min: int = Field(description="Tiempo máximo de respuesta a incidentes críticos en minutos")
-    tiempo_resolucion_critico_hrs: float = Field(description="Tiempo máximo de resolución de incidentes críticos en horas")
-    ventana_mantenimiento: str = Field(description="Horario de ventana de mantenimiento programado")
+```text
+Eres el auditor del contrato CS-2024-0891 de Banco Aurora. Tu única función
+es comparar el reporte mensual del proveedor contra ese contrato y reportar
+los incumplimientos.
 
+El contrato CS-2024-0891 que tienes como conocimiento es la norma. Cualquier
+reporte mensual que el usuario nombre o adjunte es el documento evaluado.
+Mantén siempre esa asignación de papeles.
 
-class CapacidadContractual(BaseModel):
-    """Capacidad contratada según el contrato."""
-    servidores: int = Field(description="Número de servidores dedicados")
-    tipo_instancia: str = Field(description="Tipo de instancia de servidor")
-    almacenamiento_tb: float = Field(description="Almacenamiento en TB")
-    ancho_banda_gbps: float = Field(description="Ancho de banda garantizado en Gbps")
-    retencion_respaldos_dias: int = Field(description="Días de retención de respaldos")
+PROCEDIMIENTO
 
+Cuando el usuario pida evaluar un periodo:
+1. Localiza en el contrato los valores comprometidos de: disponibilidad
+   mínima, tiempo máximo de respuesta a incidentes críticos, tiempo máximo
+   de resolución, ventana de mantenimiento autorizada, número de servidores,
+   almacenamiento, ancho de banda, retención de respaldos, fecha límite de
+   entrega del reporte y reglas de penalización.
+2. Localiza en el reporte del periodo el valor real de cada uno de esos
+   conceptos.
+3. Compara concepto por concepto.
+4. Calcula las penalizaciones que corresponden según la cláusula 4 y
+   compáralas con las que el proveedor declaró haber aplicado.
 
-class DatosContrato(BaseModel):
-    """Información estructurada extraída del contrato."""
-    numero_contrato: str
-    fecha_firma: str
-    vigencia_fin: str
-    contratante: str
-    proveedor: str
-    sla: SLAContractual
-    capacidad: CapacidadContractual
-    monto_mensual: float = Field(description="Monto mensual en MXN")
-    dia_entrega_reporte: int = Field(description="Día límite para entrega de reporte mensual")
+FORMATO DE RESPUESTA
 
+Responde siempre con esta estructura y en este orden:
 
-class IncidenteCritico(BaseModel):
-    """Datos de un incidente crítico reportado."""
-    id: str
-    fecha: str
-    tiempo_respuesta_min: int
-    tiempo_resolucion_hrs: float
+1. Tabla titulada "Incumplimientos detectados", con las columnas:
+   Concepto | Comprometido en contrato | Reportado | Severidad | Cláusula |
+   Penalización aplicable
+2. Sección "Cálculo de penalizaciones": el desglose aritmético paso a paso y
+   el total en pesos mexicanos.
+3. Sección "Veredicto": una sola línea con CUMPLE o NO CUMPLE.
+4. Sección "Acciones recomendadas": máximo tres, cada una con el área
+   responsable sugerida.
 
+REGLAS
 
-class DatosReporte(BaseModel):
-    """Información estructurada extraída del reporte operativo."""
-    numero_contrato: str
-    periodo: str
-    fecha_entrega: str
-    disponibilidad_porcentaje: float
-    incidentes_criticos: list[IncidenteCritico]
-    servidores_activos: int
-    tipo_instancia: str
-    almacenamiento_utilizado_tb: float
-    almacenamiento_total_tb: float
-    ancho_banda_promedio_mbps: float
-    respaldos_diarios_exitosos: int
-    respaldos_diarios_totales: int
-    retencion_configurada_dias: int
-    ventana_mantenimiento_usada: str
-    penalizaciones_aplicadas: str
-    monto_facturado: float
-
-
-class Discrepancia(BaseModel):
-    """Una discrepancia encontrada entre contrato y reporte."""
-    categoria: str = Field(description="Categoría: SLA, Capacidad, Operación, Facturación")
-    campo: str = Field(description="Campo específico donde se encontró la discrepancia")
-    valor_contrato: str = Field(description="Valor según el contrato")
-    valor_reporte: str = Field(description="Valor según el reporte")
-    severidad: str = Field(description="Alta, Media o Baja")
-    descripcion: str = Field(description="Descripción clara de la discrepancia")
-    impacto_financiero: Optional[str] = Field(default=None, description="Impacto financiero estimado si aplica")
-
-
-class ReporteDiscrepancias(BaseModel):
-    """Reporte consolidado de todas las discrepancias encontradas."""
-    contrato: str
-    periodo_evaluado: str
-    total_discrepancias: int
-    discrepancias: list[Discrepancia]
-    resumen_ejecutivo: str
+- Asigna severidad Alta cuando el incumplimiento genera penalización o
+  compromete la recuperación ante desastres; Media cuando degrada el
+  servicio sin generar penalización; Baja cuando es un incumplimiento
+  formal o de plazo administrativo.
+- Cita el número de cláusula del contrato en cada fila de la tabla. Si no
+  puedes citar una cláusula concreta, no incluyas esa fila.
+- Evalúa únicamente contra el contrato que tienes como conocimiento, dejando
+  fuera cualquier práctica habitual del sector.
+- Si un concepto comprometido en el contrato no aparece en el reporte,
+  escribe "No reportado" en la columna Reportado y asígnale severidad Media.
+- Si el proveedor declara que no aplicó penalizaciones y tú detectaste
+  incumplimientos penalizables, registra eso como una fila adicional de
+  severidad Alta.
+- Propón únicamente acciones que se deriven de un incumplimiento detectado.
+- Responde siempre en español, con cifras en pesos mexicanos.
 ```
 
-**Resultado esperado:** Modelos Pydantic bien tipados que servirán como esquemas de extracción y como estructura del reporte final.
+**Qué debes ver:** el contador de caracteres bajo el campo indica que estás dentro del límite de 8.000. El bloque anterior usa alrededor de 2.400.
 
-**Verificación:**
+**Por qué está escrito así:** las instrucciones repiten la misma lógica del capítulo 1 —rol, procedimiento, formato, restricciones— pero se escriben **una vez** y quedan fijas. Ahí está la diferencia entre un prompt y un agente: el prompt lo repite cada persona en cada sesión; las instrucciones del agente ya no se repiten.
 
-```bash
-python -c "from src.models import DatosContrato, DatosReporte, ReporteDiscrepancias; print('Modelos cargados correctamente')"
-```
+![Agent Builder](../Images/Capitulo02/1.png)
+---
 
-### Paso 3: Implementar el extractor de documentos
+### Paso 5 — Añadir el contrato como conocimiento
 
-**Objetivo:** Crear el módulo que utiliza el LLM para extraer información estructurada de los documentos de texto.
+**Objetivo:** que el agente lleve la norma consigo, sin que nadie tenga que adjuntarla.
 
-**Instrucciones:**
+1. Baja hasta la sección **Conocimiento** (*Knowledge*).
+2. Pulsa el icono de **nube**, **Examinar** (*Browse*), para abrir el selector de archivos.
+3. Navega a **OneDrive** → `Seminario Copilot` → `Capitulo02`.
+4. Selecciona la **carpeta `Capitulo02` completa** y confirma.
 
-1. Crea el extractor:
+**Qué debes ver:** la carpeta aparece listada bajo **Conocimiento**. Si acabas de subir los archivos, junto al nombre aparecerá la palabra **Preparando** (*Preparing*); el agente todavía no puede leerlos. Pulsa el botón de **actualizar** en la cabecera de la sección hasta que desaparezca.
 
-```python
-# src/extractor.py
-import os
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from src.models import DatosContrato, DatosReporte
+5. Activa el conmutador **Solo usar orígenes especificados** (*Only use specified sources*).
 
-load_dotenv()
+**Por qué ese conmutador:** obliga al agente a priorizar el contrato y los reportes frente a su conocimiento general. Sin él, ante una duda tiende a completar con prácticas habituales del sector, que es justo lo que una auditoría no puede permitirse.
 
+> **Nota sobre permisos.** El agente respeta los permisos y las etiquetas de confidencialidad de los archivos. Si mañana compartes este agente, cada persona verá exactamente lo que su acceso a la carpeta del contrato le permita. La seguridad la ponen los permisos del archivo, y el agente los hereda.
 
-def get_llm():
-    """Obtiene instancia del LLM configurado."""
-    return ChatOpenAI(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        temperature=0
-    )
+![Agent Builder Conocimiento](../Images/Capitulo02/2.png)
+---
 
+### Paso 6 — Configurar los mensajes iniciales
 
-def extraer_datos_contrato(texto_contrato: str) -> DatosContrato:
-    """Extrae información estructurada de un contrato."""
-    llm = get_llm()
-    structured_llm = llm.with_structured_output(DatosContrato)
+**Objetivo:** que quien reciba el agente sepa qué pedirle sin leer un manual.
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", """Eres un analista legal experto en contratos de servicios tecnológicos.
-Tu tarea es extraer información clave del contrato proporcionado y devolverla en formato estructurado.
-Extrae todos los campos solicitados con precisión. Si un valor es numérico, conviértelo al tipo correcto.
-Para montos, usa solo el valor numérico sin símbolos de moneda."""),
-        ("human", "Extrae la información estructurada del siguiente contrato:\n\n{contrato}")
-    ])
+1. Baja hasta **Indicaciones sugeridas** (*Starter prompts*).
+2. Borra los que haya generado Agent Builder y crea estos tres. Cada uno tiene un título corto y el texto del mensaje:
 
-    chain = prompt | structured_llm
-    resultado = chain.invoke({"contrato": texto_contrato})
-    return resultado
+| Título | Mensaje |
+|---|---|
+| `Auditar marzo 2025` | `Evalúa el reporte del proveedor de marzo de 2025 contra el contrato CS-2024-0891.` |
+| `Auditar abril 2025` | `Evalúa el reporte del proveedor de abril de 2025 contra el contrato CS-2024-0891.` |
+| `Resumen para el comité` | `Con la última auditoría, redacta un resumen de máximo 100 palabras para el comité de proveedores, señalando el monto total reclamable y la acción más urgente.` |
 
+**Qué debes ver:** tres tarjetas de mensaje inicial en la configuración.
 
-def extraer_datos_reporte(texto_reporte: str) -> DatosReporte:
-    """Extrae información estructurada de un reporte operativo."""
-    llm = get_llm()
-    structured_llm = llm.with_structured_output(DatosReporte)
+![Agent Builder Mensajes iniciales](../Images/Capitulo02/3.png)
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", """Eres un analista de operaciones TI experto en interpretar reportes de servicio.
-Tu tarea es extraer información clave del reporte operativo proporcionado y devolverla en formato estructurado.
-Extrae todos los campos solicitados con precisión. Para valores numéricos, conviértelos al tipo correcto.
-Para montos, usa solo el valor numérico sin símbolos de moneda.
-Para el ancho de banda, convierte a Mbps si es necesario."""),
-        ("human", "Extrae la información estructurada del siguiente reporte operativo:\n\n{reporte}")
-    ])
-
-    chain = prompt | structured_llm
-    resultado = chain.invoke({"reporte": texto_reporte})
-    return resultado
-```
-
-**Resultado esperado:** Módulo funcional que transforma texto libre en objetos Pydantic estructurados.
-
-**Verificación:**
-
-```bash
-python -c "from src.extractor import extraer_datos_contrato, extraer_datos_reporte; print('Extractor importado correctamente')"
-```
-
-### Paso 4: Crear las herramientas del agente
-
-**Objetivo:** Implementar las tools que el agente utilizará para realizar la comparación entre documentos.
-
-**Instrucciones:**
-
-1. Crea el archivo de herramientas:
-
-```python
-# src/tools.py
-import json
-from langchain_core.tools import tool
-from src.models import (
-    DatosContrato, DatosReporte, Discrepancia,
-    ReporteDiscrepancias
-)
-
-
-# Variables globales para almacenar datos extraídos durante la sesión
-_datos_contrato: DatosContrato | None = None
-_datos_reporte: DatosReporte | None = None
-
-
-def set_datos(contrato: DatosContrato, reporte: DatosReporte):
-    """Establece los datos extraídos para que las herramientas los utilicen."""
-    global _datos_contrato, _datos_reporte
-    _datos_contrato = contrato
-    _datos_reporte = reporte
-
-
-@tool
-def comparar_disponibilidad() -> str:
-    """Compara la disponibilidad reportada contra el SLA contractual.
-    Retorna las discrepancias encontradas en formato JSON."""
-    if not _datos_contrato or not _datos_reporte:
-        return json.dumps({"error": "Datos no cargados"})
-
-    discrepancias = []
-    sla_minimo = _datos_contrato.sla.disponibilidad_minima
-    disponibilidad_real = _datos_reporte.disponibilidad_porcentaje
-
-    if disponibilidad_real < sla_minimo:
-        diferencia = sla_minimo - disponibilidad_real
-        # Calcular penalización: 5% por cada 0.1% debajo del SLA
-        penalizacion_pct = (diferencia / 0.1) * 5
-        penalizacion_monto = _datos_contrato.monto_mensual * (penalizacion_pct / 100)
-
-        discrepancias.append(Discrepancia(
-            categoria="SLA",
-            campo="Disponibilidad mensual",
-            valor_contrato=f"{sla_minimo}% mínimo",
-            valor_reporte=f"{disponibilidad_real}%",
-            severidad="Alta",
-            descripcion=f"La disponibilidad ({disponibilidad_real}%) está {diferencia:.1f}% por debajo del SLA mínimo ({sla_minimo}%)",
-            impacto_financiero=f"Penalización estimada: ${penalizacion_monto:,.2f} MXN ({penalizacion_pct:.0f}% del monto mensual)"
-        ).model_dump())
-
-    return json.dumps({"discrepancias": discrepancias, "total": len(discrepancias)}, ensure_ascii=False)
-
-
-@tool
-def comparar_tiempos_respuesta() -> str:
-    """Compara los tiempos de respuesta y resolución de incidentes críticos contra el SLA.
-    Retorna las discrepancias encontradas en formato JSON."""
-    if not _datos_contrato or not _datos_reporte:
-        return json.dumps({"error": "Datos no cargados"})
-
-    discrepancias = []
-    max_respuesta = _datos_contrato.sla.tiempo_respuesta_critico_min
-    max_resolucion = _datos_contrato.sla.tiempo_resolucion_critico_hrs
-
-    for inc in _datos_reporte.incidentes_criticos:
-        if inc.tiempo_respuesta_min > max_respuesta:
-            discrepancias.append(Discrepancia(
-                categoria="SLA",
-                campo=f"Tiempo de respuesta - {inc.id}",
-                valor_contrato=f"{max_respuesta} minutos máximo",
-                valor_reporte=f"{inc.tiempo_respuesta_min} minutos",
-                severidad="Alta",
-                descripcion=f"Incidente {inc.id} ({inc.fecha}): tiempo de respuesta de {inc.tiempo_respuesta_min} min excede el máximo de {max_respuesta} min",
-                impacto_financiero=f"Penalización por exceder tiempo de respuesta: $5,000.00 MXN"
-            ).model_dump())
-
-        if inc.tiempo_resolucion_hrs > max_resolucion:
-            discrepancias.append(Discrepancia(
-                categoria="SLA",
-                campo=f"Tiempo de resolución - {inc.id}",
-                valor_contrato=f"{max_resolucion} horas máximo",
-                valor_reporte=f"{inc.tiempo_resolucion_hrs} horas",
-                severidad="Alta",
-                descripcion=f"Incidente {inc.id} ({inc.fecha}): tiempo de resolución de {inc.tiempo_resolucion_hrs} hrs excede el máximo de {max_resolucion} hrs",
-                impacto_financiero=None
-            ).model_dump())
-
-    return json.dumps({"discrepancias": discrepancias, "total": len(discrepancias)}, ensure_ascii=False)
-
-
-@tool
-def comparar_capacidad() -> str:
-    """Compara la capacidad reportada contra lo contratado (servidores, almacenamiento, ancho de banda, respaldos).
-    Retorna las discrepancias encontradas en formato JSON."""
-    if not _datos_contrato or not _datos_reporte:
-        return json.dumps({"error": "Datos no cargados"})
-
-    discrepancias = []
-    cap = _datos_contrato.capacidad
-
-    # Servidores
-    if _datos_reporte.servidores_activos < cap.servidores:
-        discrepancias.append(Discrepancia(
-            categoria="Capacidad",
-            campo="Servidores activos",
-            valor_contrato=f"{cap.servidores} instancias {cap.tipo_instancia}",
-            valor_reporte=f"{_datos_reporte.servidores_activos} instancias activas",
-            severidad="Media",
-            descripcion=f"Solo {_datos_reporte.servidores_activos} de {cap.servidores} servidores contratados están activos",
-            impacto_financiero=None
-        ).model_dump())
-
-    # Ancho de banda
-    ancho_banda_contratado_mbps = cap.ancho_banda_gbps * 1000
-    if _datos_reporte.ancho_banda_promedio_mbps < ancho_banda_contratado_mbps * 0.9:
-        discrepancias.append(Discrepancia(
-            categoria="Capacidad",
-            campo="Ancho de banda promedio",
-            valor_contrato=f"{ancho_banda_contratado_mbps:.0f} Mbps garantizado",
-            valor_reporte=f"{_datos_reporte.ancho_banda_promedio_mbps:.0f} Mbps promedio",
-            severidad="Media",
-            descripcion=f"El ancho de banda promedio ({_datos_reporte.ancho_banda_promedio_mbps} Mbps) está por debajo del garantizado ({ancho_banda_contratado_mbps} Mbps)",
-            impacto_financiero=None
-        ).model_dump())
-
-    # Retención de respaldos
-    if _datos_reporte.retencion_configurada_dias < cap.retencion_respaldos_dias:
-        discrepancias.append(Discrepancia(
-            categoria="Capacidad",
-            campo="Retención de respaldos",
-            valor_contrato=f"{cap.retencion_respaldos_dias} días",
-            valor_reporte=f"{_datos_reporte.retencion_configurada_dias} días",
-            severidad="Alta",
-            descripcion=f"La retención configurada ({_datos_reporte.retencion_configurada_dias} días) es menor a la contratada ({cap.retencion_respaldos_dias} días)",
-            impacto_financiero=None
-        ).model_dump())
-
-    # Respaldos fallidos
-    if _datos_reporte.respaldos_diarios_exitosos < _datos_reporte.respaldos_diarios_totales:
-        fallidos = _datos_reporte.respaldos_diarios_totales - _datos_reporte.respaldos_diarios_exitosos
-        discrepancias.append(Discrepancia(
-            categoria="Operación",
-            campo="Respaldos diarios",
-            valor_contrato="Respaldos diarios incrementales (sin fallas)",
-            valor_reporte=f"{_datos_reporte.respaldos_diarios_exitosos}/{_datos_reporte.respaldos_diarios_totales} exitosos ({fallidos} fallidos)",
-            severidad="Media",
-            descripcion=f"Se registraron {fallidos} respaldos diarios fallidos en el periodo",
-            impacto_financiero=None
-        ).model_dump())
-
-    return json.dumps({"discrepancias": discrepancias, "total": len(discrepancias)}, ensure_ascii=False)
-
-
-@tool
-def comparar_operacion() -> str:
-    """Compara aspectos operativos: ventana de mantenimiento, fecha de entrega del reporte.
-    Retorna las discrepancias encontradas en formato JSON."""
-    if not _datos_contrato or not _datos_reporte:
-        return json.dumps({"error": "Datos no cargados"})
-
-    discrepancias = []
-
-    # Ventana de mantenimiento
-    ventana_contrato = _datos_contrato.sla.ventana_mantenimiento
-    ventana_reporte = _datos_reporte.ventana_mantenimiento_usada
-    if ventana_contrato.lower() != ventana_reporte.lower():
-        discrepancias.append(Discrepancia(
-            categoria="Operación",
-            campo="Ventana de mantenimiento",
-            valor_contrato=ventana_contrato,
-            valor_reporte=ventana_reporte,
-            severidad="Media",
-            descripcion=f"La ventana de mantenimiento utilizada ({ventana_reporte}) difiere de la contractual ({ventana_contrato})",
-            impacto_financiero=None
-        ).model_dump())
-
-    # Fecha de entrega del reporte (debe ser antes del día 5)
-    dia_limite = _datos_contrato.dia_entrega_reporte
-    # Extraer día de la fecha de entrega
-    fecha_entrega = _datos_reporte.fecha_entrega
-    try:
-        dia_entrega = int(''.join(filter(str.isdigit, fecha_entrega.split("de")[0].strip())))
-        if dia_entrega > dia_limite:
-            discrepancias.append(Discrepancia(
-                categoria="Operación",
-                campo="Fecha de entrega del reporte",
-                valor_contrato=f"Antes del día {dia_limite} de cada mes",
-                valor_reporte=f"Entregado el {fecha_entrega}",
-                severidad="Baja",
-                descripcion=f"El reporte fue entregado el día {dia_entrega}, superando el límite del día {dia_limite}",
-                impacto_financiero=None
-            ).model_dump())
-    except (ValueError, IndexError):
-        pass
-
-    return json.dumps({"discrepancias": discrepancias, "total": len(discrepancias)}, ensure_ascii=False)
-
-
-@tool
-def comparar_facturacion() -> str:
-    """Compara la facturación contra las penalizaciones que deberían aplicarse.
-    Retorna las discrepancias encontradas en formato JSON."""
-    if not _datos_contrato or not _datos_reporte:
-        return json.dumps({"error": "Datos no cargados"})
-
-    discrepancias = []
-
-    # Verificar si hay penalizaciones que deberían aplicarse
-    sla_minimo = _datos_contrato.sla.disponibilidad_minima
-    disponibilidad_real = _datos_reporte.disponibilidad_porcentaje
-    penalizaciones_reportadas = _datos_reporte.penalizaciones_aplicadas.lower()
-
-    hay_incumplimiento_sla = disponibilidad_real < sla_minimo
-
-    # Verificar incidentes con tiempo de respuesta excedido
-    max_respuesta = _datos_contrato.sla.tiempo_respuesta_critico_min
-    incidentes_excedidos = [
-        inc for inc in _datos_reporte.incidentes_criticos
-        if inc.tiempo_respuesta_min > max_respuesta
-    ]
-
-    if (hay_incumplimiento_sla or incidentes_excedidos) and "ninguna" in penalizaciones_reportadas:
-        # Calcular penalización esperada
-        penalizacion_total = 0.0
-        detalles = []
-
-        if hay_incumplimiento_sla:
-            diferencia = sla_minimo - disponibilidad_real
-            penalizacion_pct = (diferencia / 0.1) * 5
-            pen_sla = _datos_contrato.monto_mensual * (penalizacion_pct / 100)
-            penalizacion_total += pen_sla
-            detalles.append(f"SLA disponibilidad: ${pen_sla:,.2f}")
-
-        for inc in incidentes_excedidos:
-            penalizacion_total += 5000.0
-            detalles.append(f"Respuesta {inc.id}: $5,000.00")
-
-        discrepancias.append(Discrepancia(
-            categoria="Facturación",
-            campo="Penalizaciones no aplicadas",
-            valor_contrato=f"Penalizaciones por incumplimiento: {'; '.join(detalles)}",
-            valor_reporte="Penalizaciones aplicadas: Ninguna",
-            severidad="Alta",
-            descripcion=f"El reporte indica que no se aplicaron penalizaciones, pero se detectaron incumplimientos que generan penalizaciones por ${penalizacion_total:,.2f} MXN",
-            impacto_financiero=f"${penalizacion_total:,.2f} MXN en penalizaciones no cobradas"
-        ).model_dump())
-
-    return json.dumps({"discrepancias": discrepancias, "total": len(discrepancias)}, ensure_ascii=False)
-
-
-def get_tools():
-    """Retorna la lista de herramientas disponibles para el agente."""
-    return [
-        comparar_disponibilidad,
-        comparar_tiempos_respuesta,
-        comparar_capacidad,
-        comparar_operacion,
-        comparar_facturacion
-    ]
-```
-
-**Resultado esperado:** Cinco herramientas especializadas que realizan comparaciones por categoría y retornan discrepancias en formato JSON.
-
-**Verificación:**
-
-```bash
-python -c "from src.tools import get_tools; tools = get_tools(); print(f'{len(tools)} herramientas cargadas: {[t.name for t in tools]}')"
-```
-
-Salida esperada:
-```
-5 herramientas cargadas: ['comparar_disponibilidad', 'comparar_tiempos_respuesta', 'comparar_capacidad', 'comparar_operacion', 'comparar_facturacion']
-```
-
-### Paso 5: Implementar el agente
-
-**Objetivo:** Crear el agente que orquesta las herramientas para realizar la comparación completa.
-
-**Instrucciones:**
-
-1. Crea el archivo del agente:
-
-```python
-# src/agent.py
-import os
-import json
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.agents import create_tool_calling_agent, AgentExecutor
-from src.tools import get_tools, set_datos
-from src.extractor import extraer_datos_contrato, extraer_datos_reporte
-from src.models import DatosContrato, DatosReporte
-
-load_dotenv()
-
-SYSTEM_PROMPT = """Eres un agente especializado en auditoría de contratos de servicios tecnológicos.
-Tu trabajo es comparar la información de un contrato contra un reporte operativo mensual para identificar discrepancias.
-
-PROCESO QUE DEBES SEGUIR:
-1. Usa TODAS las herramientas disponibles para comparar cada aspecto:
-   - comparar_disponibilidad: verifica el SLA de disponibilidad
-   - comparar_tiempos_respuesta: verifica tiempos de respuesta y resolución de incidentes
-   - comparar_capacidad: verifica servidores, almacenamiento, ancho de banda y respaldos
-   - comparar_operacion: verifica ventanas de mantenimiento y plazos de entrega
-   - comparar_facturacion: verifica que las penalizaciones se hayan aplicado correctamente
-
-2. Después de usar todas las herramientas, genera un REPORTE EJECUTIVO consolidado con:
-   - Resumen de hallazgos
-   - Lista de todas las discrepancias organizadas por severidad (Alta, Media, Baja)
-   - Impacto financiero total estimado
-   - Recomendaciones
-
-Sé exhaustivo y profesional. Usa TODAS las herramientas antes de generar el reporte final."""
-
-
-def crear_agente() -> AgentExecutor:
-    """Crea y configura el agente con sus herramientas."""
-    llm = ChatOpenAI(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        temperature=0
-    )
-
-    tools = get_tools()
-
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
-        ("human", "{input}"),
-        MessagesPlaceholder(variable_name="agent_scratchpad"),
-    ])
-
-    agent = create_tool_calling_agent(llm, tools, prompt)
-
-    executor = AgentExecutor(
-        agent=agent,
-        tools=tools,
-        verbose=True,
-        max_iterations=10,
-        return_intermediate_steps=True
-    )
-
-    return executor
-
-
-def ejecutar_comparacion(ruta_contrato: str, ruta_reporte: str) -> dict:
-    """
-    Ejecuta el flujo completo de comparación:
-    1. Lee los documentos
-    2. Extrae datos estructurados
-    3. Ejecuta el agente para comparar
-    4. Retorna el resultado
-
-    Args:
-        ruta_contrato: Ruta al archivo del contrato
-        ruta_reporte: Ruta al archivo del reporte
-
-    Returns:
-        dict con los resultados de la comparación
-    """
-    # 1. Leer documentos
-    print("=" * 60)
-    print("FASE 1: Lectura de documentos")
-    print("=" * 60)
-
-    with open(ruta_contrato, 'r', encoding='utf-8') as f:
-        texto_contrato = f.read()
-    print(f"✓ Contrato leído: {len(texto_contrato)} caracteres")
-
-    with open(ruta_reporte, 'r', encoding='utf-8') as f:
-        texto_reporte = f.read()
-    print(f"✓ Reporte leído: {len(texto_reporte)} caracteres")
-
-    # 2. Extraer datos estructurados
-    print("\n" + "=" * 60)
-    print("FASE 2: Extracción de datos estructurados")
-    print("=" * 60)
-
-    datos_contrato = extraer_datos_contrato(texto_contrato)
-    print(f"✓ Contrato procesado: {datos_contrato.numero_contrato}")
-    print(f"  - SLA Disponibilidad: {datos_contrato.sla.disponibilidad_minima}%")
-    print(f"  - Servidores: {datos_contrato.capacidad.servidores}")
-    print(f"  - Monto mensual: ${datos_contrato.monto_mensual:,.2f} MXN")
-
-    datos_reporte = extraer_datos_reporte(texto_reporte)
-    print(f"✓ Reporte procesado: periodo {datos_reporte.periodo}")
-    print(f"  - Disponibilidad: {datos_reporte.disponibilidad_porcentaje}%")
-    print(f"  - Incidentes críticos: {len(datos_reporte.incidentes_criticos)}")
-    print(f"  - Servidores activos: {datos_reporte.servidores_activos}")
-
-    # 3. Configurar datos para las herramientas
-    set_datos(datos_contrato, datos_reporte)
-
-    # 4. Ejecutar el agente
-    print("\n" + "=" * 60)
-    print("FASE 3: Ejecución del agente de comparación")
-    print("=" * 60)
-
-    agente = crear_agente()
-
-    input_message = f"""Realiza una comparación completa entre el contrato {datos_contrato.numero_contrato} 
-y el reporte operativo del periodo {datos_reporte.periodo}.
-
-Datos del contrato ya extraídos:
-- SLA Disponibilidad mínima: {datos_contrato.sla.disponibilidad_minima}%
-- Tiempo respuesta máximo: {datos_contrato.sla.tiempo_respuesta_critico_min} min
-- Tiempo resolución máximo: {datos_contrato.sla.tiempo_resolucion_critico_hrs} hrs
-- Servidores contratados: {datos_contrato.capacidad.servidores}
-- Retención respaldos: {datos_contrato.capacidad.retencion_respaldos_dias} días
-- Monto mensual: ${datos_contrato.monto_mensual:,.2f} MXN
-
-Datos del reporte ya extraídos:
-- Disponibilidad reportada: {datos_reporte.disponibilidad_porcentaje}%
-- Incidentes críticos: {len(datos_reporte.incidentes_criticos)}
-- Servidores activos: {datos_reporte.servidores_activos}
-- Retención configurada: {datos_reporte.retencion_configurada_dias} días
-- Penalizaciones aplicadas: {datos_reporte.penalizaciones_aplicadas}
-
-Usa TODAS las herramientas de comparación y genera el reporte final de discrepancias."""
-
-    resultado = agente.invoke({"input": input_message})
-
-    # 5. Retornar resultados
-    return {
-        "datos_contrato": datos_contrato.model_dump(),
-        "datos_reporte": datos_reporte.model_dump(),
-        "reporte_agente": resultado["output"],
-        "pasos_intermedios": len(resultado.get("intermediate_steps", []))
-    }
-```
-
-**Resultado esperado:** Un módulo que orquesta todo el flujo: lectura → extracción → comparación por agente → reporte.
-
-**Verificación:**
-
-```bash
-python -c "from src.agent import crear_agente; agent = crear_agente(); print('Agente creado correctamente')"
-```
-
-### Paso 6: Crear el script principal y ejecutar
-
-**Objetivo:** Integrar todos los componentes y ejecutar el flujo completo de comparación.
-
-**Instrucciones:**
-
-1. Crea el archivo principal:
-
-```python
-# main.py
-import json
-import sys
-from datetime import datetime
-from src.agent import ejecutar_comparacion
-
-
-def main():
-    """Punto de entrada principal del laboratorio."""
-    print("\n" + "╔" + "═" * 58 + "╗")
-    print("║  AGENTE DE COMPARACIÓN: CONTRATOS vs REPORTES            ║")
-    print("║  Lab 02-00-01                                            ║")
-    print("╚" + "═" * 58 + "╝\n")
-
-    ruta_contrato = "data/contrato_ejemplo.txt"
-    ruta_reporte = "data/reporte_ejemplo.txt"
-
-    # Verificar que los archivos existen
-    import os
-    if not os.path.exists(ruta_contrato):
-        print(f"ERROR: No se encontró el archivo {ruta_contrato}")
-        sys.exit(1)
-    if not os.path.exists(ruta_reporte):
-        print(f"ERROR: No se encontró el archivo {ruta_reporte}")
-        sys.exit(1)
-
-    # Ejecutar comparación
-    inicio = datetime.now()
-    resultado = ejecutar_comparacion(ruta_contrato, ruta_reporte)
-    duracion = (datetime.now() - inicio).total_seconds()
-
-    # Mostrar reporte final
-    print("\n" + "=" * 60)
-    print("REPORTE FINAL DEL AGENTE")
-    print("=" * 60)
-    print(resultado["reporte_agente"])
-
-    print("\n" + "-" * 60)
-    print(f"Tiempo de ejecución: {duracion:.1f} segundos")
-    print(f"Pasos del agente: {resultado['pasos_intermedios']}")
-    print("-" * 60)
-
-    # Guardar resultado completo
-    output_path = "data/resultado_comparacion.json"
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump({
-            "timestamp": datetime.now().isoformat(),
-            "duracion_segundos": duracion,
-            "reporte_agente": resultado["reporte_agente"],
-            "pasos_intermedios": resultado["pasos_intermedios"]
-        }, f, ensure_ascii=False, indent=2)
-    print(f"\n✓ Resultado guardado en: {output_path}")
-
-
-if __name__ == "__main__":
-    main()
-```
-
-2. Ejecuta el flujo completo:
-
-```bash
-python main.py
-```
-
-**Resultado esperado:** El agente debe ejecutarse mostrando las fases del proceso y producir un reporte que identifique al menos las siguientes discrepancias:
-
-- **SLA Disponibilidad:** 99.2% vs 99.5% mínimo contractual
-- **Tiempo de respuesta INC-002:** 45 min vs 30 min máximo
-- **Tiempo de resolución INC-002:** 5.2 hrs vs 4 hrs máximo
-- **Servidores activos:** 11 vs 12 contratados
-- **Retención de respaldos:** 60 días vs 90 días contractuales
-- **Ventana de mantenimiento:** horario diferente al contractual
-- **Fecha de entrega del reporte:** día 7 vs día 5 límite
-- **Penalizaciones no aplicadas:** se reporta "Ninguna" cuando hay incumplimientos
-- **Respaldos fallidos:** 2 respaldos diarios no ejecutados
-
-**Verificación:**
-
-```bash
-# Verificar que se generó el archivo de resultados
-cat data/resultado_comparacion.json | python -m json.tool | head -20
-
-# Verificar que el reporte menciona discrepancias clave
-grep -i "discrepancia\|penalización\|incumplimiento" data/resultado_comparacion.json
-```
-
-### Paso 7: Agregar prueba automatizada
-
-**Objetivo:** Crear un test que valide que el flujo de extracción y las herramientas de comparación funcionan correctamente.
-
-**Instrucciones:**
-
-1. Instala pytest:
-
-```bash
-pip install pytest
-```
-
-2. Crea el archivo de pruebas:
-
-```python
-# test_agent.py
-import json
-import pytest
-from src.models import (
-    DatosContrato, DatosReporte, SLAContractual,
-    CapacidadContractual, IncidenteCritico
-)
-from src.tools import (
-    set_datos, comparar_disponibilidad, comparar_tiempos_respuesta,
-    comparar_capacidad, comparar_operacion, comparar_facturacion
-)
-
-
-@pytest.fixture
-def datos_prueba():
-    """Fixture con datos de prueba que simulan la extracción."""
-    contrato = DatosContrato(
-        numero_contrato="CS-2024-0891",
-        fecha_firma="15 de enero de 2024",
-        vigencia_fin="31 de diciembre de 2024",
-        contratante="ETN",
-        proveedor="SCM",
-        sla=SLAContractual(
-            disponibilidad_minima=99.5,
-            tiempo_respuesta_critico_min=30,
-            tiempo_resolucion_critico_hrs=4.0,
-            ventana_mantenimiento="Domingos 02:00-06:00 hrs"
-        ),
-        capacidad=CapacidadContractual(
-            servidores=12,
-            tipo_instancia="c5.2xlarge",
-            almacenamiento_tb=5.0,
-            ancho_banda_gbps=1.0,
-            retencion_respaldos_dias=90
-        ),
-        monto_mensual=150000.0,
-        dia_entrega_reporte=5
-    )
-
-    reporte = DatosReporte(
-        numero_contrato="CS-2024-0891",
-        periodo="Marzo 2024",
-        fecha_entrega="7 de abril de 2024",
-        disponibilidad_porcentaje=99.2,
-        incidentes_criticos=[
-            IncidenteCritico(id="INC-001", fecha="05/mar", tiempo_respuesta_min=25, tiempo_resolucion_hrs=3.5),
-            IncidenteCritico(id="INC-002", fecha="12/mar", tiempo_respuesta_min=45, tiempo_resolucion_hrs=5.2),
-            IncidenteCritico(id="INC-003", fecha="28/mar", tiempo_respuesta_min=20, tiempo_resolucion_hrs=2.1),
-        ],
-        servidores_activos=11,
-        tipo_instancia="c5.2xlarge",
-        almacenamiento_utilizado_tb=3.8,
-        almacenamiento_total_tb=5.0,
-        ancho_banda_promedio_mbps=850.0,
-        respaldos_diarios_exitosos=29,
-        respaldos_diarios_totales=31,
-        retencion_configurada_dias=60,
-        ventana_mantenimiento_usada="Domingos 01:00-05:00 hrs",
-        penalizaciones_aplicadas="Ninguna",
-        monto_facturado=150000.0
-    )
-
-    set_datos(contrato, reporte)
-    return contrato, reporte
-
-
-def test_comparar_disponibilidad(datos_prueba):
-    """Verifica que se detecta incumplimiento de SLA de disponibilidad."""
-    resultado = comparar_disponibilidad.invoke({})
-    data = json.loads(resultado)
-    assert data["total"] >= 1
-    assert "99.2" in data["discrepancias"][0]["valor_reporte"]
-    assert data["discrepancias"][0]["severidad"] == "Alta"
-
-
-def test_comparar_tiempos_respuesta(datos_prueba):
-    """Verifica que se detectan incidentes con tiempos excedidos."""
-    resultado = comparar_tiempos_respuesta.invoke({})
-    data = json.loads(resultado)
-    assert data["total"] >= 2  # INC-002 excede respuesta Y resolución
-    # Verificar que INC-002 está en las discrepancias
-    ids_encontrados = [d["campo"] for d in data["discrepancias"]]
-    assert any("INC-002" in campo for campo in ids_encontrados)
-
-
-def test_comparar_capacidad(datos_prueba):
-    """Verifica que se detectan discrepancias de capacidad."""
-    resultado = comparar_capacidad.invoke({})
-    data = json.loads(resultado)
-    assert data["total"] >= 2  # Servidores + retención al menos
-    campos = [d["campo"] for d in data["discrepancias"]]
-    assert any("ervidores" in c for c in campos)
-    assert any("etención" in c or "espaldos" in c.lower() for c in campos)
-
-
-def test_comparar_operacion(datos_prueba):
-    """Verifica que se detectan discrepancias operativas."""
-    resultado = comparar_operacion.invoke({})
-    data = json.loads(resultado)
-    assert data["total"] >= 1  # Ventana de mantenimiento diferente
-    campos = [d["campo"] for d in data["discrepancias"]]
-    assert any("mantenimiento" in c.lower() or "entrega" in c.lower() for c in campos)
-
-
-def test_comparar_facturacion(datos_prueba):
-    """Verifica que se detecta falta de penalizaciones."""
-    resultado = comparar_facturacion.invoke({})
-    data = json.loads(resultado)
-    assert data["total"] >= 1
-    assert data["discrepancias"][0]["severidad"] == "Alta"
-    assert "penalización" in data["discrepancias"][0]["descripcion"].lower() or \
-           "penalizacion" in data["discrepancias"][0]["descripcion"].lower()
-```
-
-3. Ejecuta las pruebas:
-
-```bash
-pytest test_agent.py -v
-```
-
-**Resultado esperado:**
-
-```
-test_agent.py::test_comparar_disponibilidad PASSED
-test_agent.py::test_comparar_tiempos_respuesta PASSED
-test_agent.py::test_comparar_capacidad PASSED
-test_agent.py::test_comparar_operacion PASSED
-test_agent.py::test_comparar_facturacion PASSED
-
-========================= 5 passed =========================
-```
-
-**Verificación:** Todas las pruebas deben pasar, confirmando que la lógica de comparación funciona correctamente sin necesidad de llamadas al LLM (las pruebas usan datos pre-construidos).
-
-## Validación y pruebas
-
-Para validar que el laboratorio se completó exitosamente, verifica los siguientes criterios:
-
-| # | Criterio | Comando de verificación |
-|---|----------|------------------------|
-| 1 | Documentos de prueba creados | `ls data/contrato_ejemplo.txt data/reporte_ejemplo.txt` |
-| 2 | Modelos Pydantic funcionales | `python -c "from src.models import *; print('OK')"` |
-| 3 | Extractor importable | `python -c "from src.extractor import *; print('OK')"` |
-| 4 | Herramientas registradas | `python -c "from src.tools import get_tools; assert len(get_tools()) == 5"` |
-| 5 | Agente creado sin errores | `python -c "from src.agent import crear_agente; crear_agente(); print('OK')"` |
-| 6 | Tests unitarios pasan | `pytest test_agent.py -v` |
-| 7 | Flujo completo ejecutado | `test -f data/resultado_comparacion.json && echo 'OK'` |
-
-### Validación del reporte generado
-
-El reporte del agente debe contener al menos:
-
-- ✅ Identificación de incumplimiento de SLA de disponibilidad (99.2% < 99.5%)
-- ✅ Detección de al menos un incidente con tiempo de respuesta excedido
-- ✅ Identificación de servidores faltantes (11 vs 12)
-- ✅ Discrepancia en retención de respaldos (60 vs 90 días)
-- ✅ Penalizaciones no aplicadas con estimación de monto
+---
+
+### Paso 7 — Probar el agente antes de publicarlo
+
+**Objetivo:** validar el comportamiento mientras todavía es fácil corregirlo.
+
+1. Cambia a la pestaña **Probarlo** (*Try it*), en la parte superior.
+2. Pulsa el mensaje inicial **Auditar marzo 2025**.
+3. Espera la respuesta completa.
+
+**Qué debe encontrar el agente.** Estos son los nueve incumplimientos sembrados en el reporte de marzo. Recórrelos contra la tabla en pantalla; es una lectura.
+
+| # | Contrato | Reporte de marzo | Severidad esperada |
+|---|---|---|---|
+| 1 | Disponibilidad mínima 99.5% (cl. 3.1) | 99.2% | Alta |
+| 2 | Respuesta a críticos ≤ 30 min (cl. 3.2) | INC-002 en 45 min | Alta |
+| 3 | Resolución de críticos ≤ 4 h (cl. 3.3) | INC-002 en 5.2 h | Alta |
+| 4 | Mantenimiento domingos 02:00–06:00 (cl. 3.4) | Se aplicó 01:00–05:00 | Media |
+| 5 | 12 servidores dedicados (cl. 5.1) | 11 activos | Media |
+| 6 | Retención de respaldos 90 días (cl. 5.4) | 60 días | Alta |
+| 7 | Respaldos diarios sin fallas (cl. 5.4) | 29 de 31 | Media |
+| 8 | Reporte antes del día 5 (cl. 7.1) | Entregado el 7 de abril | Baja |
+| 9 | Penalizaciones según cláusula 4 | Declara "ninguna" | Alta |
+
+El **cálculo de penalizaciones** debe llegar a unos **$27,500 MXN**: $22,500 por disponibilidad (0.3 puntos porcentuales por debajo del 99.5% son tres tramos de 0.1%, a 5% del monto mensual cada uno, es decir 15% de $150,000) más $5,000 por el exceso en el tiempo de respuesta de INC-002.
+
+El **veredicto** debe ser **NO CUMPLE**.
+
+> **Si el agente añade una décima fila por el ancho de banda**, no es un error de la demostración: el reporte declara 850 Mbps de promedio frente a 1 Gbps garantizado. Es un caso genuinamente discutible, porque el contrato garantiza *capacidad* y el reporte informa *utilización*. Aprovéchalo: pregúntale `¿El ancho de banda promedio reportado incumple la cláusula 5.3, o el contrato garantiza capacidad disponible y no consumo? Justifica.` Es la mejor oportunidad de la sesión para mostrar que el agente acelera el análisis pero no sustituye el criterio del auditor.
+
+![Agent Builder Prueba](../Images/Capitulo02/4.png)
+
+4. Si falta alguna fila o el formato se desvía, no reescribas todo. Vuelve a **Configurar**, ajusta la línea concreta de las instrucciones y vuelve a **Probarlo**. Ese ciclo —ajustar una línea, reprobar— es el método de trabajo con agentes.
+
+> Si el agente responde que no encuentra los documentos, el conocimiento aún se está indexando. Vuelve a **Configurar**, pulsa **actualizar** en la sección **Conocimiento** y comprueba que ya no dice *Preparando*.
+
+---
+
+### Paso 8 — Crear y compartir el agente
+
+**Objetivo:** dejarlo disponible para el área.
+
+1. Pulsa **Crear** (*Create*), arriba a la derecha.
+2. En la pantalla de compartición, elige una de las tres opciones:
+   - **Solo yo** (*Only you*) — recomendado para la sesión de hoy.
+   - **Personas específicas de mi organización** (*Specific people*) — el caso real: el equipo de gestión de proveedores.
+   - **Cualquier persona de mi organización** (*Anyone in my organization*).
+3. Confirma.
+
+**Qué debes ver:** el agente aparece ahora en el panel izquierdo de Microsoft 365 Copilot, bajo la lista de agentes. Desde ahí se abre en cualquier momento.
+
+> **Aviso antes de compartir en un caso real.** Al compartir el agente compartes el acceso a su conocimiento. Antes de elegir "Cualquier persona de mi organización", confirma que el contrato puede ser leído por toda la organización. Para archivos de SharePoint y OneDrive el agente respeta los permisos existentes; los archivos cargados desde el equipo quedan incrustados en el agente y son legibles por todos sus destinatarios.
+
+---
+
+### Paso 9 — Reutilizar el agente con otro periodo
+
+**Objetivo:** demostrar el retorno real, que es que el trabajo de configuración no se repite.
+
+1. En el panel izquierdo, abre el agente **Auditor de contrato CS-2024-0891**.
+2. Pulsa el mensaje inicial **Auditar abril 2025**.
+
+**Qué debes ver:** una auditoría del periodo de abril, con el mismo formato y el mismo criterio, **sin haber tocado la configuración**. El resultado es distinto porque los datos son distintos:
+
+- Disponibilidad 99.7%: cumple.
+- 12 servidores, retención de 90 días, respaldos completos, mantenimiento en la ventana correcta, reporte entregado el día 4: cumple.
+- INC-005: respuesta en 52 minutos (excede los 30) y resolución en 6.4 horas (excede las 4). Incumple.
+- El proveedor aplicó $5,000 por la respuesta, pero no reconoce el exceso en la resolución.
+
+El veredicto debe ser **NO CUMPLE**, con un único incumplimiento penalizable y una observación sobre el tiempo de resolución no reconocido.
+
+3. Pulsa el tercer mensaje inicial, **Resumen para el comité**, para cerrar con la pieza ejecutiva.
+
+**Ese es el punto de la demostración.** El trabajo de leer, comparar y calcular se hizo una vez, al configurar. A partir de aquí, cada periodo cuesta un clic.
+
+![Agent Builder Reutilización](../Images/Capitulo02/5.png)
+---
+
+## Validación
+
+La demostración está completa si:
+
+- El agente aparece en el panel izquierdo de Microsoft 365 Copilot con su nombre y su icono.
+- En la auditoría de marzo detectó al menos siete de los nueve incumplimientos y cada fila cita una cláusula.
+- El total de penalizaciones se aproxima a $27,500 MXN con el desglose visible.
+- El veredicto aparece como una línea explícita.
+- El mismo agente produjo un resultado distinto y correcto para abril sin cambios en la configuración.
 
 ## Solución de problemas
 
-### Problema 1: Error de autenticación con la API de OpenAI
+### El agente inventa cláusulas o incumplimientos que no existen
 
-**Síntomas:**
-```
-openai.AuthenticationError: Error code: 401 - Invalid API key
-```
+**Síntomas:** cita una cláusula 6.2 inexistente, o reporta incumplimientos de conceptos que el contrato no regula.
 
-**Causa:** La variable de entorno `OPENAI_API_KEY` no está configurada correctamente o el archivo `.env` no se está cargando.
+**Causa:** el conmutador **Solo usar orígenes especificados** está desactivado, o el conocimiento todavía no terminó de indexarse y el agente respondió con conocimiento general.
 
-**Solución:**
+**Solución:** en **Configurar**, activa el conmutador, pulsa **actualizar** en la sección **Conocimiento** y confirma que ningún archivo dice *Preparando*. Si persiste, añade esta línea al final de las instrucciones: `Antes de escribir cada fila, verifica que la cláusula citada existe literalmente en el contrato. Si no la encuentras, omite la fila.`
 
-```bash
-# Verificar que el archivo .env existe y tiene la clave
-cat .env | grep OPENAI_API_KEY
+### El agente no encuentra el reporte del periodo
 
-# Verificar que la variable se carga correctamente
-python -c "from dotenv import load_dotenv; import os; load_dotenv(); print(os.getenv('OPENAI_API_KEY', 'NO CONFIGURADA')[:10] + '...')"
+**Síntomas:** responde que no tiene información del reporte de marzo.
 
-# Si no funciona, exportar directamente:
-export OPENAI_API_KEY="sk-tu-clave-real-aqui"
+**Causa:** la carpeta no se añadió completa al conocimiento, o los archivos aún no están indexados.
 
-# Verificar que la clave es válida
-python -c "
-from langchain_openai import ChatOpenAI
-llm = ChatOpenAI(model='gpt-4o-mini', temperature=0)
-print(llm.invoke('Hola').content)
-"
-```
+**Solución:** en **Conocimiento**, comprueba que aparece la carpeta `Capitulo02` y no solo el contrato. Como alternativa inmediata durante la sesión, adjunta el reporte al mensaje con el símbolo **+** en el chat del agente: el agente lo leerá igualmente.
 
-### Problema 2: El agente no utiliza todas las herramientas
+### La respuesta no respeta el formato de tabla
 
-**Síntomas:** El reporte final del agente está incompleto o solo menciona una o dos categorías de discrepancias. En los logs con `verbose=True` se observa que el agente solo invocó 1-2 herramientas antes de generar la respuesta.
+**Síntomas:** devuelve párrafos narrativos en lugar de la tabla de seis columnas.
 
-**Causa:** El modelo puede decidir que ya tiene suficiente información después de usar pocas herramientas, especialmente con modelos más pequeños o con temperature > 0.
+**Causa:** la sección de formato quedó diluida en unas instrucciones largas.
 
-**Solución:**
+**Solución:** mueve el bloque `FORMATO DE RESPUESTA` al principio de las instrucciones, justo después de la primera frase, y vuelve a probar.
 
-```python
-# En src/agent.py, reforzar el prompt del sistema:
+### No aparece "Nuevo agente" en el panel izquierdo
 
-# Opción 1: Hacer el prompt más directivo
-SYSTEM_PROMPT = """...(mantener texto existente)...
+**Causa:** Agent Builder está pendiente de habilitar en el tenant, o la cuenta requiere la licencia de Microsoft 365 Copilot.
 
-IMPORTANTE: DEBES usar las 5 herramientas en este orden EXACTO antes de generar el reporte:
-1. comparar_disponibilidad
-2. comparar_tiempos_respuesta
-3. comparar_capacidad
-4. comparar_operacion
-5. comparar_facturacion
-
-NO generes el reporte final hasta haber usado TODAS las herramientas."""
-
-# Opción 2: Aumentar max_iterations si el agente se detiene prematuramente
-executor = AgentExecutor(
-    agent=agent,
-    tools=tools,
-    verbose=True,
-    max_iterations=15,  # Aumentar de 10 a 15
-    return_intermediate_steps=True,
-    handle_parsing_errors=True  # Manejar errores de parsing
-)
-
-# Opción 3: Usar un modelo más capaz
-# En .env cambiar:
-# OPENAI_MODEL=gpt-4o
-```
+**Solución:** la habilitación depende del administrador y se hace desde **Aplicaciones integradas** en el centro de administración de Microsoft 365. Verifícalo con antelación a la sesión para dar margen a esa gestión.
 
 ## Limpieza
 
-```bash
-# Desactivar entorno virtual
-deactivate
-
-# (Opcional) Eliminar el proyecto completo
-cd ..
-rm -rf lab-agent-comparador
-
-# (Opcional) Solo eliminar archivos generados, manteniendo el código
-rm -f data/resultado_comparacion.json
-```
+1. Abre el agente desde el panel izquierdo de Microsoft 365 Copilot.
+2. Pulsa el menú de tres puntos junto a su nombre y elige **Eliminar** (*Delete*) si no quieres conservarlo.
+3. Si lo conservas, revisa con quién quedó compartido en la opción **Compartir**.
+4. Los archivos de OneDrive pueden quedarse: son datos ficticios y sirven para repetir la demostración.
 
 ## Resumen
 
-En este laboratorio has construido un sistema completo de comparación automatizada entre contratos y reportes operativos. Los componentes implementados fueron:
-
-1. **Modelos de datos** (Pydantic): Esquemas tipados para representar información contractual y operativa.
-2. **Extractor** (LLM + structured output): Transformación de texto libre a datos estructurados.
-3. **Herramientas especializadas** (LangChain tools): Cinco funciones de comparación por categoría.
-4. **Agente orquestador** (LangChain AgentExecutor): Coordinación inteligente del flujo de comparación.
-5. **Pruebas unitarias** (pytest): Validación de la lógica de negocio sin dependencia del LLM.
-
-### Discrepancias detectadas por el sistema
-
-| Categoría | Discrepancia | Severidad |
-|-----------|-------------|-----------|
-| SLA | Disponibilidad 99.2% < 99.5% | Alta |
-| SLA | INC-002 respuesta 45 min > 30 min | Alta |
-| SLA | INC-002 resolución 5.2 hrs > 4 hrs | Alta |
-| Capacidad | 11 servidores activos vs 12 contratados | Media |
-| Capacidad | Retención 60 días vs 90 días | Alta |
-| Operación | Ventana mantenimiento diferente | Media |
-| Operación | Reporte entregado día 7 (límite: día 5) | Baja |
-| Operación | 2 respaldos diarios fallidos | Media |
-| Facturación | Penalizaciones no aplicadas (~$27,500 MXN) | Alta |
+- Un agente es un **procedimiento congelado**: rol, fuente normativa, pasos, formato y restricciones escritos una vez y aplicados igual por todos.
+- El conocimiento es lo que lo distingue de un prompt guardado. El contrato viaja con el agente; nadie tiene que acordarse de adjuntarlo.
+- **Solo usar orígenes especificados** es la diferencia entre una auditoría defendible y una opinión bien redactada.
+- Los mensajes iniciales son la interfaz. Sin ellos, quien recibe el agente compartido no sabe qué pedirle.
+- El valor no está en la primera auditoría, que cuesta más que hacerla a mano. Está en la segunda, la tercera y la de cada mes siguiente.
+- Agent Builder cubre agentes que consultan y razonan sobre documentos. Cuando haga falta que el agente **ejecute acciones** en sistemas externos —abrir un ticket, escribir en un ERP—, el paso siguiente es Microsoft Copilot Studio.
 
 ### Recursos adicionales
 
-- [Documentación de LangChain Agents](https://python.langchain.com/docs/modules/agents/)
-- [Structured Output con LangChain](https://python.langchain.com/docs/how_to/structured_output/)
-- [Tool Calling en LangChain](https://python.langchain.com/docs/how_to/tool_calling/)
-- [Pydantic v2 Documentation](https://docs.pydantic.dev/latest/)
+- [Crear agentes con Agent Builder en Microsoft 365 Copilot](https://learn.microsoft.com/es-es/microsoft-365-copilot/extensibility/agent-builder-build-agents)
+- [Agregar orígenes de conocimiento a un agente](https://learn.microsoft.com/es-es/microsoft-365-copilot/extensibility/agent-builder-add-knowledge)
+- [Escribir instrucciones eficaces para agentes declarativos](https://learn.microsoft.com/es-es/microsoft-365-copilot/extensibility/declarative-agent-instructions)
+- [Comparativa entre Agent Builder y Copilot Studio](https://learn.microsoft.com/es-es/microsoft-365-copilot/extensibility/agent-builder)

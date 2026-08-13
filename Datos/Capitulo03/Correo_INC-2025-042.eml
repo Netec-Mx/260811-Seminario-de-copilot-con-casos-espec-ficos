@@ -1,0 +1,36 @@
+From: =?utf-8?q?Direcci=C3=B3n_de_Seguridad_de_la_Informaci=C3=B3n?=
+ <seguridad.informacion@bancoaurora.com>
+To: Operaciones Centralizadas <operaciones@bancoaurora.com>
+Subject: [INC-2025-042] Acceso no autorizado detectado en servidor de 
+ =?utf-8?q?producci=C3=B3n?=
+Date: Wed, 15 Jan 2025 08:30:00 -0600
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Equipo,
+
+Se detect=C3=B3 un acceso no autorizado al servidor AUR-PROD-DB-01 el 15 de e=
+nero de 2025 a las 03:22 UTC. La cuenta comprometida es svc_respaldos, una cu=
+enta de servicio cuya contrase=C3=B1a se mantuvo sin rotaci=C3=B3n desde juli=
+o de 2024.
+
+El acceso fue de solo lectura sobre datos de contacto de clientes. La evidenc=
+ia disponible indica que los saldos y los n=C3=BAmeros de cuenta quedaron fue=
+ra del alcance.
+
+Requiero lo siguiente antes del cierre del d=C3=ADa:
+
+1. Revisi=C3=B3n de accesos de las =C3=BAltimas 48 horas en los sistemas cone=
+ctados al expediente digital.
+2. Confirmaci=C3=B3n de que todas las cuentas de servicio productivas fueron =
+rotadas.
+3. Opini=C3=B3n de Cumplimiento sobre si procede notificaci=C3=B3n regulatori=
+a dentro del plazo de 72 horas.
+
+El reporte t=C3=A9cnico preliminar est=C3=A1 en la carpeta del incidente en O=
+neDrive.
+
+Saludos,
+Direcci=C3=B3n de Seguridad de la Informaci=C3=B3n
+Banco Aurora
